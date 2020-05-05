@@ -219,12 +219,48 @@ func TestBolt4Packet(t *testing.T) {
 	}
 }
 
+type sphinxTest struct {
+	name        string
+	spontaneous bool
+}
+
 func TestSphinxCorrectness(t *testing.T) {
+	tests := []sphinxTest{
+		{
+			name:        "regular",
+			spontaneous: false,
+		},
+		{
+			name:        "spontaneous",
+			spontaneous: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			testSphinxCorrectness(t, test)
+		})
+	}
+}
+
+func testSphinxCorrectness(t *testing.T, test sphinxTest) {
+	var assocData []byte
+	if !test.spontaneous {
+		assocData = bolt4AssocData
+	}
+
 	nodes, _, hopDatas, fwdMsg, err := newTestRoute(
-		testLegacyRouteNumHops, bolt4AssocData,
+		testLegacyRouteNumHops, assocData,
 	)
 	if err != nil {
 		t.Fatalf("unable to create random onion packet: %v", err)
+	}
+
+	var payHash [32]byte
+	if !test.spontaneous {
+		copy(payHash[:], assocData)
+	} else {
+		copy(payHash[:], fwdMsg.PaymentHash[:])
 	}
 
 	// Now simulate the message propagating through the mix net eventually
@@ -236,9 +272,8 @@ func TestSphinxCorrectness(t *testing.T) {
 
 		hop := nodes[i]
 
-		t.Logf("Processing at hop: %v \n", i)
 		onionPacket, err := hop.ProcessOnionPacket(
-			fwdMsg, bolt4AssocData, uint32(i)+1,
+			fwdMsg, payHash[:], uint32(i)+1,
 		)
 		if err != nil {
 			t.Fatalf("Node %v was unable to process the "+

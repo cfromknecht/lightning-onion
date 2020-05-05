@@ -112,6 +112,15 @@ type OnionPacket struct {
 	// associated data lets each hop authenticate higher-level data that is
 	// critical for the forwarding of this HTLC.
 	HeaderMAC [HMACSize]byte
+
+	// PaymentHash contains the derived payment hash for spontaneous onion
+	// packets. In contrast to regular payments where an external payment
+	// hash is supplied via the associated data at each hop, the spontaneous
+	// payment hash is derived from the final hop's shared secret and then
+	// committed via the associated data. This value is returned so that the
+	// caller can construct proper HTLCs that can be settled if they reach
+	// the desintatino of this onion packet.
+	PaymentHash *[32]byte
 }
 
 // generateSharedSecrets by the given nodes pubkeys, generates the shared
@@ -215,6 +224,16 @@ func NewOnionPacket(paymentPath *PaymentPath, sessionKey *btcec.PrivateKey,
 		paymentPath.NodeKeys(), sessionKey,
 	)
 
+	// If no associated data was provided, we'll compute the payment hash as
+	// the SHA256 of the final hop's shared secret.
+	var payHash *[32]byte
+	if len(assocData) == 0 {
+		lastSharedSecret := hopSharedSecrets[len(hopSharedSecrets)-1]
+		hash := sha256.Sum256(lastSharedSecret[:])
+		payHash = &hash
+		assocData = hash[:]
+	}
+
 	// Generate the padding, called "filler strings" in the paper.
 	filler := generateHeaderPadding("rho", paymentPath, hopSharedSecrets)
 
@@ -290,6 +309,7 @@ func NewOnionPacket(paymentPath *PaymentPath, sessionKey *btcec.PrivateKey,
 		EphemeralKey: sessionKey.PubKey(),
 		RoutingInfo:  mixHeader,
 		HeaderMAC:    nextHmac,
+		PaymentHash:  payHash,
 	}, nil
 }
 
