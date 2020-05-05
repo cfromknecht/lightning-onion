@@ -90,7 +90,9 @@ var (
 	testLegacyRouteNumHops = 20
 )
 
-func newTestRoute(numHops int) ([]*Router, *PaymentPath, []HopData, *OnionPacket, error) {
+func newTestRoute(numHops int,
+	assocData []byte) ([]*Router, *PaymentPath, []HopData, *OnionPacket, error) {
+
 	nodes := make([]*Router, numHops)
 
 	// Create numHops random sphinx nodes.
@@ -136,7 +138,7 @@ func newTestRoute(numHops int) ([]*Router, *PaymentPath, []HopData, *OnionPacket
 		btcec.S256(), bytes.Repeat([]byte{'A'}, 32),
 	)
 	fwdMsg, err := NewOnionPacket(
-		&route, sessionKey, nil, DeterministicPacketFiller,
+		&route, sessionKey, assocData, DeterministicPacketFiller,
 	)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("unable to create "+
@@ -218,7 +220,9 @@ func TestBolt4Packet(t *testing.T) {
 }
 
 func TestSphinxCorrectness(t *testing.T) {
-	nodes, _, hopDatas, fwdMsg, err := newTestRoute(testLegacyRouteNumHops)
+	nodes, _, hopDatas, fwdMsg, err := newTestRoute(
+		testLegacyRouteNumHops, bolt4AssocData,
+	)
 	if err != nil {
 		t.Fatalf("unable to create random onion packet: %v", err)
 	}
@@ -233,7 +237,9 @@ func TestSphinxCorrectness(t *testing.T) {
 		hop := nodes[i]
 
 		t.Logf("Processing at hop: %v \n", i)
-		onionPacket, err := hop.ProcessOnionPacket(fwdMsg, nil, uint32(i)+1)
+		onionPacket, err := hop.ProcessOnionPacket(
+			fwdMsg, bolt4AssocData, uint32(i)+1,
+		)
 		if err != nil {
 			t.Fatalf("Node %v was unable to process the "+
 				"forwarding message: %v", i, err)
@@ -288,7 +294,7 @@ func TestSphinxSingleHop(t *testing.T) {
 	// We'd like to test the proper behavior of the correctness of onion
 	// packet processing for "single-hop" payments which bare a full onion
 	// packet.
-	nodes, _, _, fwdMsg, err := newTestRoute(1)
+	nodes, _, _, fwdMsg, err := newTestRoute(1, bolt4AssocData)
 	if err != nil {
 		t.Fatalf("unable to create test route: %v", err)
 	}
@@ -299,7 +305,9 @@ func TestSphinxSingleHop(t *testing.T) {
 
 	// Simulating a direct single-hop payment, send the sphinx packet to
 	// the destination node, making it process the packet fully.
-	processedPacket, err := nodes[0].ProcessOnionPacket(fwdMsg, nil, 1)
+	processedPacket, err := nodes[0].ProcessOnionPacket(
+		fwdMsg, bolt4AssocData, 1,
+	)
 	if err != nil {
 		t.Fatalf("unable to process sphinx packet: %v", err)
 	}
@@ -315,7 +323,9 @@ func TestSphinxSingleHop(t *testing.T) {
 func TestSphinxNodeRelpay(t *testing.T) {
 	// We'd like to ensure that the sphinx node itself rejects all replayed
 	// packets which share the same shared secret.
-	nodes, _, _, fwdMsg, err := newTestRoute(testLegacyRouteNumHops)
+	nodes, _, _, fwdMsg, err := newTestRoute(
+		testLegacyRouteNumHops, bolt4AssocData,
+	)
 	if err != nil {
 		t.Fatalf("unable to create test route: %v", err)
 	}
@@ -326,13 +336,15 @@ func TestSphinxNodeRelpay(t *testing.T) {
 
 	// Allow the node to process the initial packet, this should proceed
 	// without any failures.
-	if _, err := nodes[0].ProcessOnionPacket(fwdMsg, nil, 1); err != nil {
+	_, err = nodes[0].ProcessOnionPacket(fwdMsg, bolt4AssocData, 1)
+	if err != nil {
 		t.Fatalf("unable to process sphinx packet: %v", err)
 	}
 
 	// Now, force the node to process the packet a second time, this should
 	// fail with a detected replay error.
-	if _, err := nodes[0].ProcessOnionPacket(fwdMsg, nil, 1); err != ErrReplayedPacket {
+	_, err = nodes[0].ProcessOnionPacket(fwdMsg, bolt4AssocData, 1)
+	if err != ErrReplayedPacket {
 		t.Fatalf("sphinx packet replay should be rejected, instead error is %v", err)
 	}
 }
@@ -340,7 +352,9 @@ func TestSphinxNodeRelpay(t *testing.T) {
 func TestSphinxNodeRelpaySameBatch(t *testing.T) {
 	// We'd like to ensure that the sphinx node itself rejects all replayed
 	// packets which share the same shared secret.
-	nodes, _, _, fwdMsg, err := newTestRoute(testLegacyRouteNumHops)
+	nodes, _, _, fwdMsg, err := newTestRoute(
+		testLegacyRouteNumHops, bolt4AssocData,
+	)
 	if err != nil {
 		t.Fatalf("unable to create test route: %v", err)
 	}
@@ -353,14 +367,15 @@ func TestSphinxNodeRelpaySameBatch(t *testing.T) {
 
 	// Allow the node to process the initial packet, this should proceed
 	// without any failures.
-	if err := tx.ProcessOnionPacket(0, fwdMsg, nil, 1); err != nil {
+	err = tx.ProcessOnionPacket(0, fwdMsg, bolt4AssocData, 1)
+	if err != nil {
 		t.Fatalf("unable to process sphinx packet: %v", err)
 	}
 
 	// Now, force the node to process the packet a second time, this call
 	// should not fail, even though the batch has internally recorded this
 	// as a duplicate.
-	err = tx.ProcessOnionPacket(1, fwdMsg, nil, 1)
+	err = tx.ProcessOnionPacket(1, fwdMsg, bolt4AssocData, 1)
 	if err != nil {
 		t.Fatalf("adding duplicate sphinx packet to batch should not "+
 			"result in an error, instead got: %v", err)
@@ -386,7 +401,9 @@ func TestSphinxNodeRelpaySameBatch(t *testing.T) {
 func TestSphinxNodeRelpayLaterBatch(t *testing.T) {
 	// We'd like to ensure that the sphinx node itself rejects all replayed
 	// packets which share the same shared secret.
-	nodes, _, _, fwdMsg, err := newTestRoute(testLegacyRouteNumHops)
+	nodes, _, _, fwdMsg, err := newTestRoute(
+		testLegacyRouteNumHops, bolt4AssocData,
+	)
 	if err != nil {
 		t.Fatalf("unable to create test route: %v", err)
 	}
@@ -399,7 +416,8 @@ func TestSphinxNodeRelpayLaterBatch(t *testing.T) {
 
 	// Allow the node to process the initial packet, this should proceed
 	// without any failures.
-	if err := tx.ProcessOnionPacket(uint16(0), fwdMsg, nil, 1); err != nil {
+	err = tx.ProcessOnionPacket(uint16(0), fwdMsg, bolt4AssocData, 1)
+	if err != nil {
 		t.Fatalf("unable to process sphinx packet: %v", err)
 	}
 
@@ -412,7 +430,7 @@ func TestSphinxNodeRelpayLaterBatch(t *testing.T) {
 
 	// Now, force the node to process the packet a second time, this should
 	// fail with a detected replay error.
-	err = tx2.ProcessOnionPacket(uint16(0), fwdMsg, nil, 1)
+	err = tx2.ProcessOnionPacket(uint16(0), fwdMsg, bolt4AssocData, 1)
 	if err != nil {
 		t.Fatalf("sphinx packet replay should not have been rejected, "+
 			"instead error is %v", err)
@@ -431,7 +449,9 @@ func TestSphinxNodeRelpayLaterBatch(t *testing.T) {
 func TestSphinxNodeReplayBatchIdempotency(t *testing.T) {
 	// We'd like to ensure that the sphinx node itself rejects all replayed
 	// packets which share the same shared secret.
-	nodes, _, _, fwdMsg, err := newTestRoute(testLegacyRouteNumHops)
+	nodes, _, _, fwdMsg, err := newTestRoute(
+		testLegacyRouteNumHops, bolt4AssocData,
+	)
 	if err != nil {
 		t.Fatalf("unable to create test route: %v", err)
 	}
@@ -444,7 +464,8 @@ func TestSphinxNodeReplayBatchIdempotency(t *testing.T) {
 
 	// Allow the node to process the initial packet, this should proceed
 	// without any failures.
-	if err := tx.ProcessOnionPacket(uint16(0), fwdMsg, nil, 1); err != nil {
+	err = tx.ProcessOnionPacket(uint16(0), fwdMsg, bolt4AssocData, 1)
+	if err != nil {
 		t.Fatalf("unable to process sphinx packet: %v", err)
 	}
 
@@ -457,7 +478,7 @@ func TestSphinxNodeReplayBatchIdempotency(t *testing.T) {
 
 	// Now, force the node to process the packet a second time, this should
 	// not fail with a detected replay error.
-	err = tx2.ProcessOnionPacket(uint16(0), fwdMsg, nil, 1)
+	err = tx2.ProcessOnionPacket(uint16(0), fwdMsg, bolt4AssocData, 1)
 	if err != nil {
 		t.Fatalf("sphinx packet replay should not have been rejected, "+
 			"instead error is %v", err)
@@ -482,7 +503,7 @@ func TestSphinxNodeReplayBatchIdempotency(t *testing.T) {
 func TestSphinxAssocData(t *testing.T) {
 	// We want to make sure that the associated data is considered in the
 	// HMAC creation
-	nodes, _, _, fwdMsg, err := newTestRoute(5)
+	nodes, _, _, fwdMsg, err := newTestRoute(5, bolt4AssocData)
 	if err != nil {
 		t.Fatalf("unable to create random onion packet: %v", err)
 	}
@@ -501,7 +522,7 @@ func TestSphinxAssocData(t *testing.T) {
 func TestSphinxEncodeDecode(t *testing.T) {
 	// Create some test data with a randomly populated, yet valid onion
 	// forwarding message.
-	_, _, _, fwdMsg, err := newTestRoute(5)
+	_, _, _, fwdMsg, err := newTestRoute(5, bolt4AssocData)
 	if err != nil {
 		t.Fatalf("unable to create random onion packet: %v", err)
 	}
@@ -570,7 +591,7 @@ func newEOBRoute(numHops uint32,
 		btcec.S256(), bytes.Repeat([]byte{'A'}, 32),
 	)
 	fwdMsg, err := NewOnionPacket(
-		&route, sessionKey, nil, DeterministicPacketFiller,
+		&route, sessionKey, bolt4AssocData, DeterministicPacketFiller,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -740,7 +761,7 @@ func TestSphinxHopVariableSizedPayloads(t *testing.T) {
 			// all the layers and pass them on to the next node
 			// properly.
 			processedPacket, err := currentHop.ProcessOnionPacket(
-				nextPkt, nil, uint32(i),
+				nextPkt, bolt4AssocData, uint32(i),
 			)
 			if err != nil {
 				t.Fatalf("#%v: unable to process packet at "+

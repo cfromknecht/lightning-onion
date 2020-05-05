@@ -64,7 +64,7 @@ func BenchmarkPathPacketConstruction(b *testing.B) {
 
 func BenchmarkProcessPacket(b *testing.B) {
 	b.StopTimer()
-	path, _, _, sphinxPacket, err := newTestRoute(1)
+	path, _, _, sphinxPacket, err := newTestRoute(1, bolt4AssocData)
 	if err != nil {
 		b.Fatalf("unable to create test route: %v", err)
 	}
