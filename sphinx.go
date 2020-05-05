@@ -458,6 +458,9 @@ type ProcessedPacket struct {
 	// MoreHops.
 	ForwardingInstructions *HopData
 
+	// SharedSecret is the ECDH shared-secret used to decrypt this payload.
+	SharedSecret Hash256
+
 	// Payload is the raw payload as extracted from the packet. If the
 	// ForwardingInstructions field above is nil, then this is a modern TLV
 	// payload. As a result, the caller should parse the contents to obtain
@@ -675,6 +678,7 @@ func processOnionPacket(onionPkt *OnionPacket, sharedSecret *Hash256,
 	return &ProcessedPacket{
 		Action:                 action,
 		ForwardingInstructions: hopData,
+		SharedSecret:           *sharedSecret,
 		Payload:                *outerHopPayload,
 		NextPacket:             innerPkt,
 	}, nil

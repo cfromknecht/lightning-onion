@@ -277,6 +277,10 @@ func TestSphinxCorrectness(t *testing.T) {
 
 			fwdMsg = onionPacket.NextPacket
 		}
+
+		if onionPacket.SharedSecret == [32]byte{} {
+			t.Fatalf("processed packet's shared secret is empty")
+		}
 	}
 }
 
