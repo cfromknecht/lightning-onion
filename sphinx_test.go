@@ -90,7 +90,7 @@ var (
 	testLegacyRouteNumHops = 20
 )
 
-func newTestRoute(numHops int) ([]*Router, *PaymentPath, *[]HopData, *OnionPacket, error) {
+func newTestRoute(numHops int) ([]*Router, *PaymentPath, []HopData, *OnionPacket, error) {
 	nodes := make([]*Router, numHops)
 
 	// Create numHops random sphinx nodes.
@@ -154,7 +154,7 @@ func newTestRoute(numHops int) ([]*Router, *PaymentPath, *[]HopData, *OnionPacke
 		hopsData = append(hopsData, *hopData)
 	}
 
-	return nodes, &route, &hopsData, fwdMsg, nil
+	return nodes, &route, hopsData, fwdMsg, nil
 }
 
 func TestBolt4Packet(t *testing.T) {
@@ -241,7 +241,7 @@ func TestSphinxCorrectness(t *testing.T) {
 
 		// The hop data for this hop should *exactly* match what was
 		// initially used to construct the packet.
-		expectedHopData := (*hopDatas)[i]
+		expectedHopData := hopDatas[i]
 		if !reflect.DeepEqual(*onionPacket.ForwardingInstructions, expectedHopData) {
 			t.Fatalf("hop data doesn't match: expected %v, got %v",
 				spew.Sdump(expectedHopData),
